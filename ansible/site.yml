@@ -14,5 +14,13 @@
   gather_facts: true
   vars:
     backend_private_ip: "{{ lookup('env', 'BACKEND_PRIVATE_IP') }}"
+  pre_tasks:
+    - name: Validate backend private IP
+      ansible.builtin.assert:
+        that:
+          - backend_private_ip | length > 0
+          - backend_private_ip is match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+        fail_msg: "BACKEND_PRIVATE_IP is missing or invalid."
+        success_msg: "Backend private IP is configured."
   roles:
     - frontend

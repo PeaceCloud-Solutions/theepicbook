@@ -134,6 +134,8 @@ stages:
         echo "ANSIBLE EPICBOOK DEPLOYMENT"
         echo "=========================================="
 
+        echo "Backend private IP configured: ${BACKEND_PRIVATE_IP}"
+
         /home/azureuser/ansible-venv/bin/ansible-playbook site.yml \
           --private-key "$(sshKey.secureFilePath)"
 
