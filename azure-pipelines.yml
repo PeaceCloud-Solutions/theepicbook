@@ -36,14 +36,13 @@ stages:
         echo "Python:"
         python3 --version
 
-        if ! command -v ansible-playbook >/dev/null 2>&1; then
-          echo "Installing Ansible..."
-          sudo apt-get update
-          sudo apt-get install -y ansible
+        if [ ! -x /home/azureuser/ansible-venv/bin/ansible-playbook ]; then
+           echo "ERROR: Compatible Ansible installation was not found."
+           exit 1
         fi
 
         echo "Ansible:"
-        ansible-playbook --version
+        /home/azureuser/ansible-venv/bin/ansible-playbook --version
 
         echo "Prepare stage completed successfully."
       displayName: 'Install and Check Ansible'
@@ -88,10 +87,10 @@ stages:
         cd ansible
 
         echo "Checking inventory..."
-        ansible-inventory --list >/dev/null
+        /home/azureuser/ansible-venv/bin/ansible-inventory --list >/dev/null 
 
         echo "Checking playbook syntax..."
-        ansible-playbook site.yml \
+        /home/azureuser/ansible-venv/bin/ansible-playbook site.yml \
           --syntax-check \
           --private-key "$(sshKey.secureFilePath)"
 
@@ -135,7 +134,7 @@ stages:
         echo "ANSIBLE EPICBOOK DEPLOYMENT"
         echo "=========================================="
 
-        ansible-playbook site.yml \
+        /home/azureuser/ansible-venv/bin/ansible-playbook site.yml \
           --private-key "$(sshKey.secureFilePath)"
 
         echo "=========================================="
