@@ -1,0 +1,213 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  name: SelfHostedPool
+
+variables:
+- group: epicbook-secrets
+
+stages:
+
+# =========================================================
+# STAGE 1 - PREPARE
+# =========================================================
+- stage: Prepare
+  displayName: 'Prepare Deployment'
+  jobs:
+  - job: PrepareTools
+    displayName: 'Prepare Ansible Environment'
+    steps:
+    - checkout: self
+
+    - bash: |
+        set -e
+
+        echo "=========================================="
+        echo "EPICBOOK APPLICATION PIPELINE"
+        echo "Prepare Deployment"
+        echo "=========================================="
+
+        echo "Agent:"
+        hostname
+
+        echo "Python:"
+        python3 --version
+
+        if ! command -v ansible-playbook >/dev/null 2>&1; then
+          echo "Installing Ansible..."
+          sudo apt-get update
+          sudo apt-get install -y ansible
+        fi
+
+        echo "Ansible:"
+        ansible-playbook --version
+
+        echo "Prepare stage completed successfully."
+      displayName: 'Install and Check Ansible'
+
+
+# =========================================================
+# STAGE 2 - VALIDATE
+# =========================================================
+- stage: Validate
+  displayName: 'Validate Ansible'
+  dependsOn: Prepare
+  condition: succeeded()
+  jobs:
+  - job: ValidateAnsible
+    displayName: 'Validate Ansible Configuration'
+    steps:
+    - checkout: self
+
+    - task: DownloadSecureFile@1
+      name: sshKey
+      displayName: 'Download EpicBook SSH Key'
+      inputs:
+        secureFile: 'epicbook-azure-key'
+
+    - bash: |
+        set -e
+
+        chmod 600 "$(sshKey.secureFilePath)"
+
+        sed \
+          -e "s/APP_PUBLIC_IP_PLACEHOLDER/$(APP_PUBLIC_IP)/g" \
+          -e "s/BACKEND_ANSIBLE_HOST_PLACEHOLDER/$(BACKEND_ANSIBLE_HOST)/g" \
+          ansible/inventory/hosts.ini.template \
+          > ansible/inventory/hosts.ini
+
+        echo "=========================================="
+        echo "Generated Ansible inventory"
+        echo "=========================================="
+
+        sed -E 's/(ansible_host=).*/\1<configured>/' ansible/inventory/hosts.ini
+
+        cd ansible
+
+        echo "Checking inventory..."
+        ansible-inventory --list >/dev/null
+
+        echo "Checking playbook syntax..."
+        ansible-playbook site.yml \
+          --syntax-check \
+          --private-key "$(sshKey.secureFilePath)"
+
+        echo "Ansible validation successful."
+      displayName: 'Validate Inventory and Playbook'
+
+
+# =========================================================
+# STAGE 3 - CONFIGURE AND DEPLOY
+# =========================================================
+- stage: Deploy
+  displayName: 'Configure and Deploy'
+  dependsOn: Validate
+  condition: succeeded()
+  jobs:
+  - job: AnsibleDeploy
+    displayName: 'Deploy EpicBook with Ansible'
+    steps:
+    - checkout: self
+
+    - task: DownloadSecureFile@1
+      name: sshKey
+      displayName: 'Download EpicBook SSH Key'
+      inputs:
+        secureFile: 'epicbook-azure-key'
+
+    - bash: |
+        set -e
+
+        chmod 600 "$(sshKey.secureFilePath)"
+
+        sed \
+          -e "s/APP_PUBLIC_IP_PLACEHOLDER/$(APP_PUBLIC_IP)/g" \
+          -e "s/BACKEND_ANSIBLE_HOST_PLACEHOLDER/$(BACKEND_ANSIBLE_HOST)/g" \
+          ansible/inventory/hosts.ini.template \
+          > ansible/inventory/hosts.ini
+
+        cd ansible
+
+        echo "=========================================="
+        echo "ANSIBLE EPICBOOK DEPLOYMENT"
+        echo "=========================================="
+
+        ansible-playbook site.yml \
+          --private-key "$(sshKey.secureFilePath)"
+
+        echo "=========================================="
+        echo "EpicBook Ansible deployment completed"
+        echo "=========================================="
+      displayName: 'Run Ansible Playbook'
+      env:
+        MYSQL_FQDN: $(MYSQL_FQDN)
+        MYSQL_ADMIN_USERNAME: $(MYSQL_ADMIN_USERNAME)
+        MYSQL_ADMIN_PASSWORD: $(MYSQL_ADMIN_PASSWORD)
+        BACKEND_PRIVATE_IP: $(BACKEND_PRIVATE_IP)
+
+
+# =========================================================
+# STAGE 4 - VERIFY
+# =========================================================
+- stage: Verify
+  displayName: 'Verify Deployment'
+  dependsOn: Deploy
+  condition: succeeded()
+  jobs:
+  - job: VerifyEpicBook
+    displayName: 'Verify EpicBook Services'
+    steps:
+    - checkout: self
+
+    - task: DownloadSecureFile@1
+      name: sshKey
+      displayName: 'Download EpicBook SSH Key'
+      inputs:
+        secureFile: 'epicbook-azure-key'
+
+    - bash: |
+        set -e
+
+        chmod 600 "$(sshKey.secureFilePath)"
+
+        echo "=========================================="
+        echo "VERIFY EPICBOOK DEPLOYMENT"
+        echo "=========================================="
+
+        echo "Checking backend EpicBook service..."
+        ssh \
+          -o StrictHostKeyChecking=no \
+          -i "$(sshKey.secureFilePath)" \
+          azureuser@$(BACKEND_ANSIBLE_HOST) \
+          "sudo systemctl is-active epicbook && sudo ss -ltn | grep ':8080'"
+
+        echo
+        echo "Checking frontend Nginx..."
+        ssh \
+          -o StrictHostKeyChecking=no \
+          -i "$(sshKey.secureFilePath)" \
+          azureuser@$(APP_PUBLIC_IP) \
+          "sudo systemctl is-active nginx && sudo ss -ltn | grep ':80'"
+
+        echo
+        echo "Checking EpicBook through public frontend..."
+        curl --fail \
+          --retry 5 \
+          --retry-delay 5 \
+          --max-time 20 \
+          "http://$(APP_PUBLIC_IP)/" \
+          -o /tmp/epicbook.html
+
+        grep -q "Peace Nwadinachi Offor" /tmp/epicbook.html
+
+        echo
+        echo "=========================================="
+        echo "EPICBOOK DEPLOYMENT VERIFIED SUCCESSFULLY"
+        echo "Frontend HTTP :80       OK"
+        echo "Backend application :8080 OK"
+        echo "Deployment identity     OK"
+        echo "=========================================="
+      displayName: 'Verify Frontend and Backend'

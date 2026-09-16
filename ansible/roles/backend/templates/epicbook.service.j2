@@ -1,0 +1,17 @@
+[Unit]
+Description=EpicBook Node.js Application
+After=network.target
+
+[Service]
+Type=simple
+User=azureuser
+WorkingDirectory=/opt/epicbook
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment="JAWSDB_URL=mysql://{{ mysql_admin_username | urlencode }}:{{ mysql_admin_password | urlencode }}@{{ mysql_fqdn }}:3306/bookstore?ssl=true"
+ExecStart=/usr/bin/node /opt/epicbook/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

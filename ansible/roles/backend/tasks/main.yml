@@ -1,0 +1,108 @@
+---
+- name: Install backend dependencies
+  become: true
+  ansible.builtin.apt:
+    name:
+      - nodejs
+      - npm
+      - git
+      - default-mysql-client
+    state: present
+    update_cache: true
+
+- name: Create EpicBook application directory
+  become: true
+  ansible.builtin.file:
+    path: /opt/epicbook
+    state: directory
+    owner: azureuser
+    group: azureuser
+    mode: "0755"
+
+- name: Copy EpicBook application to backend
+  become: true
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../"
+    dest: /opt/epicbook/
+    owner: azureuser
+    group: azureuser
+    mode: preserve
+
+- name: Install Node.js packages
+  become: true
+  become_user: azureuser
+  ansible.builtin.command: npm ci --omit=dev
+  args:
+    chdir: /opt/epicbook
+  environment:
+    NODE_ENV: production
+
+- name: Create bookstore database
+  ansible.builtin.shell: |
+    mysql \
+      --host="{{ mysql_fqdn }}" \
+      --user="{{ mysql_admin_username }}" \
+      --password="{{ mysql_admin_password }}" \
+      --ssl-mode=REQUIRED \
+      -e "CREATE DATABASE IF NOT EXISTS bookstore;"
+  no_log: true
+  changed_when: false
+
+- name: Import EpicBook schema
+  ansible.builtin.shell: |
+    mysql \
+      --host="{{ mysql_fqdn }}" \
+      --user="{{ mysql_admin_username }}" \
+      --password="{{ mysql_admin_password }}" \
+      --ssl-mode=REQUIRED \
+      bookstore < /opt/epicbook/db/BuyTheBook_Schema.sql
+  no_log: true
+  register: schema_import
+  changed_when: schema_import.rc == 0
+  failed_when:
+    - schema_import.rc != 0
+    - "'already exists' not in schema_import.stderr"
+
+- name: Import author seed data
+  ansible.builtin.shell: |
+    mysql \
+      --host="{{ mysql_fqdn }}" \
+      --user="{{ mysql_admin_username }}" \
+      --password="{{ mysql_admin_password }}" \
+      --ssl-mode=REQUIRED \
+      bookstore < /opt/epicbook/db/author_seed.sql
+  no_log: true
+  changed_when: false
+
+- name: Import books seed data
+  ansible.builtin.shell: |
+    mysql \
+      --host="{{ mysql_fqdn }}" \
+      --user="{{ mysql_admin_username }}" \
+      --password="{{ mysql_admin_password }}" \
+      --ssl-mode=REQUIRED \
+      bookstore < /opt/epicbook/db/books_seed.sql
+  no_log: true
+  changed_when: false
+
+- name: Install EpicBook systemd service
+  become: true
+  ansible.builtin.template:
+    src: epicbook.service.j2
+    dest: /etc/systemd/system/epicbook.service
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+
+- name: Reload systemd
+  become: true
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable and restart EpicBook
+  become: true
+  ansible.builtin.systemd:
+    name: epicbook
+    enabled: true
+    state: restarted
