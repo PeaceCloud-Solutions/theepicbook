@@ -8,9 +8,13 @@ User=azureuser
 WorkingDirectory=/opt/epicbook
 Environment=NODE_ENV=production
 Environment=PORT=8080
-Environment="JAWSDB_URL=mysql://{{ mysql_admin_username | urlencode }}:{{ mysql_admin_password | urlencode }}@{{ mysql_fqdn }}:3306/bookstore?ssl=true"
+Environment=DB_HOST={{ mysql_fqdn }}
+Environment=DB_PORT=3306
+Environment=DB_NAME=bookstore
+Environment=DB_USER={{ mysql_admin_username }}
+Environment="DB_PASSWORD={{ mysql_admin_password }}"
 ExecStart=/usr/bin/node /opt/epicbook/server.js
-Restart=always
+Restart=on-failure
 RestartSec=5
 
 [Install]
