@@ -1,3 +1,4 @@
+THIS IS AN INTENTIONAL INVALID YAML LINE: [
 ---
 - name: Configure EpicBook backend
   hosts: backend
