@@ -6,3 +6,6 @@ ansible/inventory/hosts.ini
 .env
 *.backup
 backups/
+
+*.broken
+*.pre-cicd
