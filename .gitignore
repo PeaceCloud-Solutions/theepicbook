@@ -3,3 +3,6 @@ node_modules
 
 # Generated Ansible inventory
 ansible/inventory/hosts.ini
+.env
+*.backup
+backups/
